@@ -50,9 +50,10 @@
 #include "device_manager.h"
 #include "pstorage.h"
 #include "app_util_platform.h"
-#include "spi_master.h"
 
 #include "keypad.h"
+#include "display.h"
+
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
@@ -95,11 +96,6 @@
 
 #define DEAD_BEEF                       0xDEADBEEF                                  /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
 
-#define SPI_SCK_PIN 5u
-#define SPI_MOSI_PIN 6u
-#define SPI_CS_PIN 7u
-#define DISP_DC_PIN 8u
-#define DISP_RST_PIN 9u
 
 
 static ble_gap_sec_params_t             m_sec_params;                               /**< Security requirements for this application. */
@@ -120,55 +116,6 @@ static app_timer_id_t											m_hid_timer_id;
 static void on_bas_evt(ble_bas_t * p_bas, ble_bas_evt_t * p_evt);
 
 
-
-static void spi_master_event_handler(spi_master_evt_t spi_master_evt)
-{
-    switch (spi_master_evt.evt_type)
-    {
-        case SPI_MASTER_EVT_TRANSFER_COMPLETED:
-            
-            break;
-        
-        default:
-            //No implementation needed.
-            break;
-    }
-}
-
-
-static void spi_master_init()
-{
-    uint32_t err_code = NRF_SUCCESS;
-
-    //Configure SPI master.
-    spi_master_config_t spi_config = SPI_MASTER_INIT_DEFAULT;
-   	spi_config.SPI_Freq = SPI_FREQUENCY_FREQUENCY_K125; 
-            spi_config.SPI_Pin_SCK = SPI_SCK_PIN;
-            spi_config.SPI_Pin_MISO = 25;
-            spi_config.SPI_Pin_MOSI = SPI_MOSI_PIN;
-            spi_config.SPI_Pin_SS = SPI_CS_PIN;
-    
-    spi_config.SPI_CONFIG_ORDER = SPI_CONFIG_ORDER_MsbFirst;
-    
-    err_code = spi_master_open(SPI_MASTER_0, &spi_config);
-    APP_ERROR_CHECK(err_code);
-
-		spi_master_evt_handler_reg(SPI_MASTER_0, spi_master_event_handler);
-}
-
-void init_display() {
-		nrf_gpio_cfg_output(DISP_DC_PIN);
-    nrf_gpio_cfg_output(DISP_RST_PIN);
-		nrf_gpio_pin_clear(DISP_DC_PIN);
-
-		nrf_gpio_pin_clear(DISP_RST_PIN);
-		nrf_delay_ms(10);
-		nrf_gpio_pin_set(DISP_RST_PIN);
-		
-
-		spi_master_init(0);
-		
-}
 
 
 
@@ -648,9 +595,6 @@ static uint32_t send_key_scan_press_release(ble_hids_t *   p_hids,
  *                          app_start_timer() call to the timeout handler.
  */
 
-		uint8_t t[] = {0x21, 0x14, 0xB0, 0x20, 0x0c, 128, 64};
-	uint8_t d[] = {0x55, 0xff};
-
 		uint8_t key = 0x0b;
     uint16_t actual_len;
 
@@ -658,23 +602,8 @@ static void battery_level_meas_timeout_handler(void * p_context)
 {
     UNUSED_PARAMETER(p_context);
     adc_start();
-		static uint8_t first = 1;
-
-
-
-		if(first) {
-		nrf_gpio_pin_clear(DISP_DC_PIN);
-			spi_master_send_recv(SPI_MASTER_0, t, sizeof(t), NULL, 0);
-			first = 0;
-		}
-		else
-		{
-//					nrf_gpio_pin_set(DISP_DC_PIN);
-//				spi_master_send_recv(SPI_MASTER_0, &d, sizeof(d), NULL, 0);
-
-		}
 		
-		
+		display_write(key);	
 
 }
 
@@ -704,9 +633,7 @@ static void bas_init(void)
 }
 
 static void hid_timeout_handler(void * p_context) {
-					nrf_gpio_pin_set(DISP_DC_PIN);
-					d[0] = key;
-				spi_master_send_recv(SPI_MASTER_0, &d, 1, NULL, 0);
+		display_write(key);
 		send_key_scan_press_release(&m_hids,
                                            &key,
                                            1,
@@ -1152,7 +1079,7 @@ int main(void)
     conn_params_init();
     sec_params_init();
 
-		init_display();
+		display_init();
 
     // Start execution
     timers_start();
