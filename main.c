@@ -52,21 +52,27 @@
 #include "app_util_platform.h"
 
 #include "keypad.h"
+#include "keyboard.h"
 #include "display.h"
 
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
 
-#define DEVICE_NAME                     "DISP"                           /**< Name of device. Will be included in the advertising data. */
+#ifdef NOKIA_FRONT_COVER
+	#define DEVICE_NAME                     "DISP"                           /**< Name of device. Will be included in the advertising data. */
+#else
+	#define DEVICE_NAME                     "KEYBRD"                           /**< Name of device. Will be included in the advertising data. */
+#endif
+
 
 #define APP_ADV_INTERVAL                1600                                          /**< The advertising interval (in units of 0.625 ms. This value corresponds to 1s). */
 //#define APP_ADV_TIMEOUT_IN_SECONDS      180                                         /**< The advertising timeout (in units of seconds). */
 
 // YOUR_JOB: Modify these according to requirements.
 #define APP_TIMER_PRESCALER             0                                           /**< Value of the RTC1 PRESCALER register. */
-#define APP_TIMER_MAX_TIMERS            6                                           /**< Maximum number of simultaneously created timers. */
-#define APP_TIMER_OP_QUEUE_SIZE         6                                           /**< Size of timer operation queues. */
+#define APP_TIMER_MAX_TIMERS            8                                           /**< Maximum number of simultaneously created timers. */
+#define APP_TIMER_OP_QUEUE_SIZE         8                                           /**< Size of timer operation queues. */
 
 #define MIN_CONN_INTERVAL               MSEC_TO_UNITS(100, UNIT_1_25_MS)            /**< Minimum acceptable connection interval (0.5 seconds). */
 #define MAX_CONN_INTERVAL               MSEC_TO_UNITS(100, UNIT_1_25_MS)           /**< Maximum acceptable connection interval (1 second). */
@@ -106,6 +112,7 @@ static ble_bas_t	m_bas;
 
 static app_timer_id_t                     m_battery_timer_id;                               /**< Battery measurement timer. */
 static app_timer_id_t											m_hid_timer_id;
+static app_timer_id_t											m_key_block_timer_id;
 
 // YOUR_JOB: Modify these according to requirements (e.g. if other event types are to pass through
 //           the scheduler).
@@ -603,7 +610,7 @@ static void battery_level_meas_timeout_handler(void * p_context)
     UNUSED_PARAMETER(p_context);
     adc_start();
 		
-		display_write(key);	
+		//display_write(key);	
 
 }
 
@@ -633,13 +640,19 @@ static void bas_init(void)
 }
 
 static void hid_timeout_handler(void * p_context) {
-		display_write(key);
+		//display_write(key);
 		send_key_scan_press_release(&m_hids,
                                            &key,
                                            1,
                                            0,
                                            &actual_len);
 
+}
+
+
+int key_block = 0;
+static void key_block_timeout_handler(void * p_context) {
+	key_block = 0;
 }
 
 /**@brief Function for the Timer initialization.
@@ -658,6 +671,7 @@ static void timers_init(void)
     
 		
 		err_code = app_timer_create(&m_hid_timer_id, APP_TIMER_MODE_SINGLE_SHOT, hid_timeout_handler);
+		err_code = app_timer_create(&m_key_block_timer_id, APP_TIMER_MODE_SINGLE_SHOT, key_block_timeout_handler);
 		
 		APP_ERROR_CHECK(err_code);
 }
@@ -1057,6 +1071,19 @@ static void device_manager_init(void)
 
 
 
+
+void keyboard_callback(int scancode) {
+	if(key_block && scancode == key)
+		return;
+
+	key = scancode;
+	key_block = 1;
+
+  app_timer_start(m_hid_timer_id, APP_TIMER_TICKS(1, APP_TIMER_PRESCALER), NULL);
+  app_timer_start(m_key_block_timer_id, APP_TIMER_TICKS(200, APP_TIMER_PRESCALER), NULL);
+}
+
+
 void keypad_callback(nokia_key nk) {
 		//the value of the enum equals the HID scan codes. So no translation needed at this point
 	key = nk;
@@ -1068,7 +1095,12 @@ void keypad_callback(nokia_key nk) {
 int main(void)
 {
     // Initialize
-    keypad_init(&keypad_callback);
+		#ifdef NOKIA_FRONT_COVER
+    	keypad_init(&keypad_callback);
+		#else
+			keyboard_init(&keyboard_callback);
+		#endif
+
     timers_init();
     ble_stack_init();
     scheduler_init();    
@@ -1079,7 +1111,9 @@ int main(void)
     conn_params_init();
     sec_params_init();
 
+#ifdef NOKIA_FRONT_COVER
 		display_init();
+#endif
 
     // Start execution
     timers_start();

@@ -6,6 +6,7 @@
 
 #include "keypad.h"
 
+
 #define R0_PIN 10
 #define R1_PIN 12
 #define R2_PIN 11
@@ -15,7 +16,6 @@
 #define C2_PIN 15
 #define C3_PIN 20
 #define C4_PIN 18
-
 
 
 static app_gpiote_user_id_t           m_gpiote_user_id;
